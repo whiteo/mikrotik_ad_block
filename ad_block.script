@@ -1,0 +1,53 @@
+:local scriptName "AD_BLOCK";
+:local hostUrl "https://gist.githubusercontent.com/WhiteO/fbbd5585b76cfe16db96cda3b9cc2a44/raw/52cecf641adcab2b06e95ce657c392560aeedae3/AD_BLOCK"; --- need to change
+:do {
+:if ( [/file find name=$scriptName] ) do={
+/file remove $scriptName;
+:log info "old file $scriptName has been deleted";
+};
+/tool fetch check-certificate=no mode=https url=$hostUrl  dst-path=("./".$scriptName);
+:delay 2s;
+:if ( [/ip firewall filter find jump-target=$scriptName] ) do={
+:log warning "$scriptName: jump filter already exists, SKIPPING";
+} else={ 
+/ip firewall filter add action=jump chain=forward protocol=tcp dst-port=80,443 connection-state=new jump-target=$scriptName;
+};
+:delay 2s;
+:if ( [/ip firewall filter find chain=$scriptName] ) do={ 
+:log warning "$scriptName: reject filter already exists, SKIPPING";
+} else={ 
+/ip firewall filter add action=reject chain=$scriptName reject-with=icmp-host-unreachable dst-address-list=$scriptName;
+};
+:delay 2s;
+:if ( [/file get [/file find name=$scriptName] size] > 0 ) do={
+:local content [ /file get [/file find name=$scriptName] contents ];
+:local contentLen [:len $content];
+:local lineEnd 0;
+:local line "";
+:local lastEnd 0;
+:while ($lineEnd < $contentLen) do={
+:set lineEnd [:find $content "\n" $lastEnd];
+:if ( [ :len $lineEnd ] = 0 ) do={
+:set lineEnd $contentLen;
+};
+:set line [ :pick $content $lastEnd $lineEnd ];
+:set lastEnd ( $lineEnd + 1 );
+:if ($line != "\r") do={
+:if ( [ :find $line "\r" -1 ] > 0 ) do={
+:set $line [ :pick $line 0 ( [ :len $line ] - 1 ) ];
+};
+:if ( [ :find $line "\n" -1 ] > 0 ) do={
+:set $line [ :pick $line 0 ( [ :len $line ] - 1 ) ];
+};
+:do { 
+/ip firewall address-list add list=$scriptName address=[ :tostr $line ]; 
+} on-error={
+:log warning "$scriptName: host $line already exists, SKIPPING";
+};
+};
+};
+};
+/file remove $scriptName;
+} on-error={
+:log warning "$scriptName: hosts file download FAILED";
+};
